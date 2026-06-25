@@ -194,6 +194,7 @@ static void run_ncurses(char* board, char* next, const int* neigh) {
             gen++;
         }
     }
+    curs_set(1);
     endwin();
 }
 
@@ -219,19 +220,20 @@ int main(void) {
     // Headless test mode: if GOL_FRAMES is set, run that many ticks with no screen.
     const char* frames_env = getenv("GOL_FRAMES");
     int frames = frames_env != NULL ? atoi(frames_env) : -1;
-    // Take the seed from a redirected file, or fall back to a built-in glider.
-    if (isatty(STDIN_FILENO)) {
-        load_default(board);
-    } else {
+    // Seed from a redirected file; on a bare terminal fall back to a built-in glider.
+    int redirected = !isatty(STDIN_FILENO);
+    if (redirected) {
         read_seed(board);
+    } else {
+        load_default(board);
     }
     if (frames >= 0) {
         run_headless(board, next, neigh, frames);
         free(neigh);
         return 0;
     }
-    // The seed arrived on stdin; reconnect the keyboard so keys can be read.
-    if (freopen("/dev/tty", "r", stdin) == NULL) {
+    // Only when the seed came from a redirect do we reopen the terminal for keys.
+    if (redirected && freopen("/dev/tty", "r", stdin) == NULL) {
         fprintf(stderr, "cannot open terminal for input\n");
         free(neigh);
         return 1;
