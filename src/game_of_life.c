@@ -197,7 +197,7 @@ static void run_ncurses(char* board, char* next, const int* neigh) {
     endwin();
 }
 
-// Advance the simulation with no screen output (the headless --frames mode).
+// Advance the simulation with no screen output (used by the headless test mode).
 static void run_headless(char* board, char* next, const int* neigh, int frames) {
     for (int i = 0; i < frames; i++) {
         step(board, next, neigh);
@@ -206,7 +206,7 @@ static void run_headless(char* board, char* next, const int* neigh, int frames) 
     printf("frames=%d population=%d\n", frames, population(board));
 }
 
-int main(int argc, char* const argv[]) {
+int main(void) {
     static char board[CELLS];
     static char next[CELLS];
     // The neighbour table is the only heap allocation; it is freed before exit.
@@ -216,13 +216,9 @@ int main(int argc, char* const argv[]) {
         return 1;
     }
     build_neighbor_table(neigh);
-    // Look for "--frames N": N runs headless (no screen) for testing; -1 means play.
-    int frames = -1;
-    for (int i = 1; i + 1 < argc; i++) {
-        if (strcmp(argv[i], "--frames") == 0) {
-            frames = atoi(argv[i + 1]);
-        }
-    }
+    // Headless test mode: if GOL_FRAMES is set, run that many ticks with no screen.
+    const char* frames_env = getenv("GOL_FRAMES");
+    int frames = frames_env != NULL ? atoi(frames_env) : -1;
     // Take the seed from a redirected file, or fall back to a built-in glider.
     if (isatty(STDIN_FILENO)) {
         load_default(board);

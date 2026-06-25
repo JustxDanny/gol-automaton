@@ -37,39 +37,28 @@ jobs:
             git push origin HEAD:${{ github.ref_name }}
           fi
 
-      - name: Verify formatting is clean (clang-format, Google)
+      - name: Style check (clang-format 18, Google)
         run: clang-format-18 --dry-run --Werror src/game_of_life.c
 
       - name: Static analysis (cppcheck 2.13)
         run: |
-          set +e
-          cppcheck --enable=all --inline-suppr --check-level=exhaustive \
+          out=$(cppcheck --enable=all --inline-suppr --check-level=exhaustive \
             --suppress=missingIncludeSystem --suppress=checkersReport \
             --template='{severity}|{id}|{file}:{line}|{message}' \
-            src/game_of_life.c > cppcheck.out 2>&1
-          echo "===== cppcheck output ====="
-          cat cppcheck.out
-          # Fail only on real findings; cppcheck "information" notes are not defects.
-          if grep -Eq '^(error|warning|style|performance|portability)\|' cppcheck.out; then
-            echo "::error::cppcheck reported real findings (see cppcheck.out committed to this branch)"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -f cppcheck.out
-            git commit -m "ci: cppcheck diagnostic report" || true
-            git push origin HEAD:${{ github.ref_name }} || true
-            exit 1
+            src/game_of_life.c 2>&1)
+          echo "$out"
+          if echo "$out" | grep -Eq '^(error|warning|style|performance|portability)\|'; then
+            echo "cppcheck reported findings"; exit 1
           fi
 
       - name: Build (-Wall -Wextra -Werror)
         run: make -C src
 
       - name: Leak check (valgrind, headless)
-        run: >
-          valgrind --leak-check=full --error-exitcode=1
-          ./src/game_of_life --frames 200 < seeds/gosper_gun.txt
+        run: GOL_FRAMES=200 valgrind --leak-check=full --error-exitcode=1 ./src/game_of_life < seeds/gosper_gun.txt
 
       - name: Correctness invariants (oracle-verified populations)
         run: |
-          test "$(./src/game_of_life --frames 200 < seeds/block.txt)" = "frames=200 population=4"
-          test "$(./src/game_of_life --frames 200 < seeds/glider.txt)" = "frames=200 population=5"
-          test "$(./src/game_of_life --frames 200 < seeds/blinker_toad.txt)" = "frames=200 population=9"
+          test "$(GOL_FRAMES=200 ./src/game_of_life < seeds/block.txt)" = "frames=200 population=4"
+          test "$(GOL_FRAMES=200 ./src/game_of_life < seeds/glider.txt)" = "frames=200 population=5"
+          test "$(GOL_FRAMES=200 ./src/game_of_life < seeds/blinker_toad.txt)" = "frames=200 population=9"
