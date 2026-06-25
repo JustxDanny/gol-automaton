@@ -20,74 +20,46 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-format-18 cppcheck libncurses-dev valgrind
 
-      - name: Tool versions
-        run: |
-          clang-format-18 --version
-          cppcheck --version
-          gcc --version | head -1
-
-      - name: Auto-apply clang-format (Google) and commit if needed
-        if: github.event_name == 'push'
-        run: |
-          clang-format-18 -i src/game_of_life.c
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "style: apply clang-format-18"
-            git push origin HEAD:${{ github.ref_name }}
-          fi
-
-      - name: Verify formatting is clean (clang-format, Google)
-        run: clang-format-18 --dry-run --Werror src/game_of_life.c
-
-      - name: Static analysis (cppcheck 2.13)
-        run: |
-          set +e
-          cppcheck --enable=all --inline-suppr --check-level=exhaustive \
-            --suppress=missingIncludeSystem --suppress=checkersReport \
-            --template='{severity}|{id}|{file}:{line}|{message}' \
-            src/game_of_life.c > cppcheck.out 2>&1
-          echo "===== cppcheck output ====="
-          cat cppcheck.out
-          if grep -Eq '^(error|warning|style|performance|portability)\|' cppcheck.out; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -f cppcheck.out
-            git commit -m "ci: cppcheck diagnostic report" || true
-            git push origin HEAD:${{ github.ref_name }} || true
-            exit 1
-          fi
-
-      - name: Build, leak-check and invariants
+      - name: Run all checks (capture report)
         run: |
           set +e
           R=ci-report.txt
           : > "$R"
-          log() { echo "$@" | tee -a "$R"; }
           fail=0
-          log "== build (gcc -std=c11 -Wall -Wextra -Werror) =="
-          make -C src 2>&1 | tee -a "$R"
-          [ "${PIPESTATUS[0]}" -ne 0 ] && fail=1
-          if [ "$fail" -eq 0 ]; then
-            log "== valgrind (--frames 200 < gosper_gun) =="
-            valgrind --leak-check=full --error-exitcode=1 \
-              ./src/game_of_life --frames 200 < seeds/gosper_gun.txt 2>&1 | tee -a "$R"
-            [ "${PIPESTATUS[0]}" -ne 0 ] && fail=1
-            log "== invariants (oracle-verified populations) =="
-            for spec in block.txt:4 glider.txt:5 blinker_toad.txt:9; do
-              f="${spec%:*}"; exp="${spec#*:}"
-              out=$(./src/game_of_life --frames 200 < "seeds/$f")
-              log "$f -> [$out]  expect [frames=200 population=$exp]"
-              [ "$out" != "frames=200 population=$exp" ] && fail=1
-            done
-          fi
-          if [ "$fail" -ne 0 ]; then
-            log "RESULT: FAIL"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -f "$R"
-            git commit -m "ci: build/test diagnostic report" || true
-            git push origin HEAD:${{ github.ref_name }} || true
-            exit 1
-          fi
-          log "RESULT: PASS"
+          echo "== clang-format --dry-run --Werror ==" >> "$R"
+          clang-format-18 --dry-run --Werror src/game_of_life.c >> "$R" 2>&1 || fail=1
+          echo "== cppcheck ==" >> "$R"
+          cppcheck --enable=all --inline-suppr --check-level=exhaustive \
+            --suppress=missingIncludeSystem --suppress=checkersReport \
+            --template='{severity}|{id}|{file}:{line}|{message}' \
+            src/game_of_life.c >> "$R" 2>&1
+          grep -Eq '^(error|warning|style|performance|portability)\|' "$R" && fail=1
+          echo "== build (gcc -std=c11 -Wall -Wextra -Werror) ==" >> "$R"
+          make -C src >> "$R" 2>&1 || fail=1
+          echo "== valgrind (--frames 200 < gosper_gun) ==" >> "$R"
+          valgrind --leak-check=full --error-exitcode=1 \
+            ./src/game_of_life --frames 200 < seeds/gosper_gun.txt >> "$R" 2>&1 || fail=1
+          echo "== invariants ==" >> "$R"
+          for spec in block.txt:4 glider.txt:5 blinker_toad.txt:9; do
+            f="${spec%:*}"; e="${spec#*:}"
+            o=$(./src/game_of_life --frames 200 < "seeds/$f")
+            echo "$f -> [$o]  want [frames=200 population=$e]" >> "$R"
+            [ "$o" != "frames=200 population=$e" ] && fail=1
+          done
+          echo "OVERALL=$([ $fail -eq 0 ] && echo PASS || echo FAIL)" >> "$R"
+          echo "===== REPORT ====="
+          cat "$R"
+          exit 0
+
+      - name: Publish diagnostic report
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ci-report.txt
+          git commit -m "ci: diagnostic report" || true
+          git push origin HEAD:${{ github.ref_name }} || true
+
+      - name: Verdict
+        if: always()
+        run: grep -q "OVERALL=PASS" ci-report.txt
