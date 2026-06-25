@@ -206,7 +206,7 @@ static void run_headless(char* board, char* next, const int* neigh, int frames) 
     printf("frames=%d population=%d\n", frames, population(board));
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* const argv[]) {
     static char board[CELLS];
     static char next[CELLS];
     // The neighbour table is the only heap allocation; it is freed before exit.
