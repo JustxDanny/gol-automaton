@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18 cppcheck libncurses-dev valgrind
+
+      - name: Tool versions
+        run: |
+          clang-format-18 --version
+          cppcheck --version
+          gcc --version | head -1
+
+      - name: Auto-apply clang-format (Google) and commit if needed
+        if: github.event_name == 'push'
+        run: |
+          clang-format-18 -i src/game_of_life.c
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "style: apply clang-format-18"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Verify formatting is clean (clang-format, Google)
+        run: clang-format-18 --dry-run --Werror src/game_of_life.c
+
+      - name: Static analysis (cppcheck 2.13)
+        run: >
+          cppcheck --enable=all --suppress=missingIncludeSystem
+          --suppress=checkersReport --error-exitcode=1 src/game_of_life.c
+
+      - name: Build (-Wall -Wextra -Werror)
+        run: make -C src
+
+      - name: Leak check (valgrind, headless)
+        run: >
+          valgrind --leak-check=full --error-exitcode=1
+          ./src/game_of_life --frames 200 < seeds/gosper_gun.txt
+
+      - name: Correctness invariants (oracle-verified populations)
+        run: |
+          test "$(./src/game_of_life --frames 200 < seeds/block.txt)" = "frames=200 population=4"
+          test "$(./src/game_of_life --frames 200 < seeds/glider.txt)" = "frames=200 population=5"
+          test "$(./src/game_of_life --frames 200 < seeds/blinker_toad.txt)" = "frames=200 population=9"

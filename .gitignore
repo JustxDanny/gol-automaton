@@ -1,0 +1,6 @@
+# Build artifacts
+game_of_life
+src/game_of_life
+*.o
+*.out
+*.dSYM/
