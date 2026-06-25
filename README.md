@@ -58,7 +58,7 @@ A bare run (no input) starts with a single glider.
   the screen and keys live.
 - **Input handover:** the seed is read from stdin, then the controlling terminal is
   reopened so ncurses can read live keys.
-- **Tested:** a hidden `--frames N` mode runs headless so CI can valgrind the table
+- **Tested:** a hidden headless mode (set `GOL_FRAMES`) runs headless so CI can valgrind the table
   allocation for leaks and assert known populations.
 
 ## Tests
